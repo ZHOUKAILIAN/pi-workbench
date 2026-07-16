@@ -1,0 +1,33 @@
+$schema: ../schemas/team.schema.json
+id: investigate-and-verify
+name: Investigate and independently verify
+version: 1
+description: Two read-only scouts investigate independent evidence streams; the parent synthesizes before an independent verifier checks the conclusion.
+use_when: The problem has at least two independent evidence sources and a wrong conclusion would be costly.
+parent_responsibility: Own scope, resolve conflicts, synthesize evidence, and make the final claim.
+stages:
+  - id: code-investigation
+    agent: repo-scout
+    parallel_group: investigation
+    mode: read-only
+    objective: Trace the relevant code path and identify test or verification entry points.
+  - id: evidence-investigation
+    agent: repo-scout
+    parallel_group: investigation
+    mode: read-only
+    objective: Inspect the second independent evidence source defined by the parent task.
+  - id: verification
+    agent: independent-verifier
+    depends_on:
+      - code-investigation
+      - evidence-investigation
+    mode: read-only
+    objective: Check the parent synthesis against the acceptance criteria and underlying evidence.
+completion:
+  require_all_stages: true
+  require_parent_synthesis: true
+  allowed_verdicts:
+    - pass
+    - fail
+    - inconclusive
+
