@@ -1,67 +1,100 @@
 # Codex Agent Team
 
-沉淀可复用的 Codex 子 agent、提示词、team recipe 和脱敏执行样例。
+一套直接建立在 Codex 原生 multi-agent 能力上的角色与 workflow 资产。
 
-这个仓库不再实现一套新的 agent runtime。Codex 负责原生子 agent 的创建、并行协作、消息传递和结果汇总；本仓库负责保存可复用的协作资产，让一次有效的协作方式可以被审查、复用和持续改进。
+Codex 负责创建子 agent、并发执行、消息传递和结果汇总；本仓库只维护可复用角色、workflow skill、质量 gate 和脱敏案例，不实现另一套 agent runtime。
 
-## 为什么单独建这个仓库
+## 当前能力
 
-截至 2026-07-16，Codex 已经原生提供 subagent / multi-agent delegation，并允许客户端按 thread 或 turn 控制 multi-agent 模式。对于多数“拆任务 -> 并行调查 -> 汇总结论”的工作，不再需要先搭一层自定义执行 runtime。
+- 5 个可复用 agent role prompt：Product Manager、Technical Designer、Developer、QA、Reviewer。
+- 1 个原生 workflow skill：`feature-delivery`。
+- 项目级并发与嵌套限制。
+- 无第三方依赖的结构验证脚本。
 
-`agent-team-runtime` 仍有独立价值，但边界应更窄：
-
-| 能力 | Codex Agent Team | agent-team-runtime |
-| --- | --- | --- |
-| 子 agent 创建、消息和并行执行 | 使用 Codex 原生能力 | 不重复实现 |
-| 角色说明、提示词和 team recipe | 主要职责 | 可以作为消费方 |
-| 仓库级约定和 skills | 使用 `AGENTS.md` / Codex skills | 可以注入或引用 |
-| 固定状态机、人工 gate、失败恢复 | 不负责 | 适合继续由 runtime 负责 |
-| 跨阶段 artifact / evidence 审计 | 保存轻量、脱敏样例 | 适合做强约束和完整追踪 |
-
-官方依据：[Codex changelog](https://learn.chatgpt.com/docs/changelog)。
-
-## 目录
+## 原生目录
 
 ```text
-agents/       可复用的子 agent 角色定义
-prompts/      面向具体任务的提示词
-teams/        多个 agent 如何组合的声明式 recipe
-templates/    新增资产时复制的模板
-schemas/      team recipe 等机器可读文件的 schema
-examples/     脱敏后的真实使用记录和复盘
+.codex/
+  config.toml                    Codex 项目级并发与嵌套配置
+.agents/
+  skills/
+    feature-delivery/            Codex 自动发现的项目 skill
+      SKILL.md
+      skill.json
+      agents/openai.yaml         Codex UI 展示与默认调用 prompt
+      references/agents/         workflow 实际注入的角色 prompt
+examples/                        脱敏使用记录
+scripts/validate.mjs             仓库结构与元数据验证
 ```
 
-## 使用方式
+`codex-rs/protocol/src/prompts/` 这类目录是 Codex 产品内部提示词，不是用户扩展入口。本仓库也不保留一个脱离 workflow 的通用 `prompts/` 目录：角色 prompt 作为 owning skill 的 reference，workflow 规则只归 `SKILL.md`，避免两份提示词逐渐漂移。
 
-1. 先判断任务是否真的能拆成相互独立的子任务。
-2. 从 `agents/` 选择角色，从 `prompts/` 选择任务提示词。
-3. 复杂协作优先复用 `teams/` 的 recipe；简单任务直接给单个子 agent 明确、封闭的任务。
-4. 父 agent 对最终结论负责，不能把子 agent 输出原样当成已验证事实。
-5. 有复用价值的成功或失败案例，经脱敏后写入 `examples/`。
+## 使用
 
-首批资产：
+在仓库根目录启动 Codex：
 
-- [`repo-scout`](agents/repo-scout.md)：只读定位代码、约定和风险。
-- [`independent-verifier`](agents/independent-verifier.md)：基于验收标准独立验证结果。
-- [`investigate-and-verify`](teams/investigate-and-verify.yaml)：调查与验证分工 recipe。
-- [`bounded-subtask`](prompts/bounded-subtask.md)：给子 agent 的通用封闭任务提示词。
+```bash
+codex
+```
 
-## 资产质量规则
+Codex 会从 `.agents/skills/*/SKILL.md` 发现项目 skill。首次使用时必须把仓库标记为 trusted，否则 skill 仍可加载，但 `.codex/config.toml` 的并发和深度设置不会生效。
 
-每个子 agent 定义至少说明：
+可以直接说：
 
-- 什么时候使用、什么时候不要使用；
-- 明确输入、允许使用的工具和写权限；
-- 必须返回的证据与结构；
-- 完成条件和升级条件；
-- 与父 agent 的责任边界。
+```text
+使用 feature-delivery，把这个需求按多 agent 流程推进到本地可验证完成。
+```
 
-提示词应表达目标、范围、事实来源、约束和完成条件，不依赖“请认真”“尽量做好”这类不可验证的要求。
+也可以要求 workflow 只执行一个角色阶段：
+
+```text
+使用 feature-delivery 的 Product Manager role prompt，只整理需求边界和验收标准，不修改代码。
+```
+
+## Workflow 边界
+
+`feature-delivery` 是由父 agent 执行的协作协议：
+
+```text
+Product contract
+  -> Technical plan
+  -> Implementation
+  -> QA + Review
+  -> Parent synthesis
+```
+
+父 agent 对范围、gate、冲突处理和最终结论负责。workflow 读取对应 role prompt，把它连同实际任务边界一起交给 Codex 原生 generic subagent。子 agent 的摘要不是事实来源，关键结论必须回到仓库代码、diff 和实际验证命令。
+
+截至 2026-07-16，本机 `codex-cli 0.144.4` 的当前 callable subagent schema 没有暴露自定义 `agent_type` 参数；真实 smoke 也没有返回可选 custom roles。因此首版不依赖 `.codex/agents` 命名角色，而使用当前已经验证可用的 generic subagent + role prompt。未来某个 Codex surface 明确暴露 custom agent types 后，可以增加适配层，但 role prompt 仍保持单一真相源。
+
+Codex 原生 workflow 是模型驱动的协作，不是持久化状态机。需要跨会话恢复、强制人工 gate、结构化事件账本或自动失败重试时，继续使用 `agent-team-runtime` 这类交付协议层更合适。
+
+## 验证
+
+```bash
+npm test
+codex -C . debug prompt-input "检查 agent role 与 workflow skill 是否可见"
+```
+
+第一条检查 role prompt、skill 元数据、目录边界和本地 Markdown 链接。第二条让当前 Codex 真实加载项目上下文；输出中应出现 `feature-delivery` skill。
+
+## 扩展规则
+
+新增 agent role prompt 时：
+
+1. 在 owning skill 的 `references/agents/` 新增一个 Markdown 文件；
+2. 定义 responsibility、boundaries、required input、output contract 和 completion；
+3. 在 `SKILL.md` 的资产表和对应 gate 中引用它；
+4. 不在其他文件复制同一角色 prompt；
+5. 运行 `npm test` 和 Codex 加载验证。
+
+新增 workflow 时，创建独立的 `.agents/skills/<workflow>/SKILL.md` 与 `skill.json`。不同触发条件、风险边界或完成信号的流程应拆成不同 skill。
 
 ## 安全
 
-- 不提交 token、cookie、账号、客户数据、内部 URL 或未脱敏日志。
-- 不直接复制 Codex session 原文；先提取可复用结构并脱敏。
-- `examples/` 只保存最小必要证据。
-- 发布为 public 前，必须单独做一次 secrets 和隐私检查。
+- 不提交 token、cookie、账号、客户数据、内部 URL 或原始 Codex session。
+- 案例必须脱敏，只保留复现协作决策所需的最小证据。
+- 写入型 agent 不得自行扩大文件范围，也不得擅自 commit、push、发布或触发外部写操作。
+- 这是公开仓库；每次提交和 push 前都必须执行 secrets、隐私与机器路径检查。
 
+官方能力变化参考：[Codex changelog](https://learn.chatgpt.com/docs/changelog)。

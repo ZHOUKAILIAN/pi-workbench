@@ -1,31 +1,31 @@
 # Repository Instructions
 
-This repository is an asset library for Codex-native multi-agent collaboration. Do not add a custom agent executor or workflow runtime unless a requirement explicitly changes the repository boundary.
+This repository is a Codex-native agent and workflow asset library. Keep Codex as the executor and do not add a custom agent runtime unless the user explicitly changes the product boundary.
 
-## Asset ownership
+## Source of truth
 
-- Put reusable roles in `agents/`.
-- Put task prompts in `prompts/`.
-- Put declarative multi-agent compositions in `teams/`.
-- Put authoring skeletons in `templates/`.
-- Put machine-readable contracts in `schemas/`.
-- Put only sanitized evidence in `examples/`.
+- `.agents/skills/*/references/agents/*.md` owns reusable role prompts.
+- `.agents/skills/*/SKILL.md` owns workflow sequencing, prompt selection, and gates.
+- Each skill's `skill.json` owns machine-readable discovery metadata.
+- Each skill's `agents/openai.yaml` owns UI-facing name, description, and default prompt.
+- `.codex/config.toml` owns project-level concurrency and depth defaults.
+- `examples/` contains sanitized evidence only.
+
+Do not duplicate role instructions in a generic prompt folder, unsupported custom-agent config, or workflow YAML.
 
 ## Change rules
 
-- Keep agent tasks bounded and independently executable.
-- State read/write permissions explicitly.
-- Require evidence, completion criteria, and escalation conditions.
-- Prefer links between assets over duplicated prompt text.
-- Keep human-facing documents in Markdown and control data in YAML or JSON.
-- Never commit credentials, personal data, customer data, raw session logs, or machine-specific secrets.
+- Keep every delegated task bounded and independently executable.
+- State write scope, output contract, completion criteria, and escalation conditions.
+- Never assign overlapping writes to parallel agents.
+- The parent agent owns scope decisions, gate decisions, conflict resolution, and the final claim.
+- Never commit credentials, personal data, customer data, raw sessions, or machine-specific secrets.
 
 ## Verification
 
 For every change:
 
-1. Check Markdown links and referenced asset IDs.
-2. Validate YAML/JSON syntax.
-3. Validate team recipes against `schemas/team.schema.json` when a validator is available.
-4. Review the diff for secrets and machine-specific paths.
-
+1. Run `npm test`.
+2. Run `codex -C . debug prompt-input "validate Codex agent assets"` when Codex is installed.
+3. Confirm the model-visible prompt contains changed skill names and startup output has no warning caused by changed assets.
+4. Review `git diff --check` and scan the diff for secrets and machine-specific paths.

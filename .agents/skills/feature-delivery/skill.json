@@ -1,0 +1,5 @@
+{
+  "name": "feature-delivery",
+  "description": "Use when a scoped repository feature or behavior change needs multi-agent delivery with explicit acceptance criteria and independent verification.",
+  "sub_skills": []
+}
