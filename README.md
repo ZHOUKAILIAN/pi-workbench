@@ -8,6 +8,7 @@ Codex 负责创建子 agent、并发执行、消息传递和结果汇总；本�
 
 - 5 个可复用 agent role prompt：Product Manager、Technical Designer、Developer、QA、Reviewer。
 - 1 个原生 workflow skill：`feature-delivery`。
+- 1 份本机 Codex subagent / prompt 快照：`local-codex/`（对应 `~/.codex/agents` 与 `~/.codex/prompts`）。
 - 项目级并发与嵌套限制。
 - 无第三方依赖的结构验证脚本。
 
@@ -23,6 +24,9 @@ Codex 负责创建子 agent、并发执行、消息传递和结果汇总；本�
       skill.json
       agents/openai.yaml         Codex UI 展示与默认调用 prompt
       references/agents/         workflow 实际注入的角色 prompt
+local-codex/
+  agents/                        本机 ~/.codex/agents 快照
+  prompts/                       本机 ~/.codex/prompts 快照
 examples/                        脱敏使用记录
 scripts/validate.mjs             仓库结构与元数据验证
 ```
