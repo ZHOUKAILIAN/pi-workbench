@@ -1,28 +1,35 @@
 # Pi Workbench
 
-可迁移的个人 Pi 工作环境：换电脑、换工作，仍能恢复自己的角色分工、交付流程、工具与方法论。
+个人 Pi 工作台，把角色分工、交付流程、工具和工程方法组织成一套可复用的工作环境。
 
-本仓库已转为 **Pi-only**。旧 Codex CLI 配置、快照和 feature-delivery skill 不再维护，历史保留在 Git 中。仓库已由 `codex-agent-team` 更名为 [pi-workbench](https://github.com/ZHOUKAILIAN/pi-workbench)。
+在不同项目和电脑上，使用同一套协作方式；模型、账号和工作环境配置由本机独立管理。
 
-## 我的能力入口
+## 能力
 
-| 入口 / 组件 | 能力 | 恢复方式 |
+| 入口 / 组件 | 用途 | 来源 |
 | --- | --- | --- |
-| `/build` | 需求对齐、实现、评审、验证 | 本仓库 prompts |
-| `/work` | 解释、检查、调查、修复、交付 | 本仓库 prompts |
-| `/figma_delivery` | 设计对齐、UI 实现、评审、还原验证 | 本仓库 prompts；需另外配置 Figma/相关 skills |
-| 5 个角色 | product_aligner、evidence_investigator、implementer、code_reviewer、verifier | 本仓库 agents |
-| `subagent` | 单角色、并行、顺序链；子 Pi 进程隔离上下文 | 本仓库 extensions |
-| `/fix` | 可恢复的修复工作流原型 | 私有 my-pi-extension，按需接入 |
-| 额度状态栏 / `/fast` | Pi 内的订阅额度与优先处理接线 | 私有 my-pi-extension 的 codex-usage-status；不依赖 Codex CLI |
-| 搜索 / MCP | Tavily 与 MCP adapter | `--with-tools` 写入固定 npm 版本；账号另配 |
-| Skills | 文档驱动、验证、设计审计、工程偏好等 | 独立 skills 仓库与外部来源；不复制出第二份源码 |
+| `/build` | 需求对齐、实现、评审、验证 | 内置提示词 |
+| `/work` | 解释、检查、调查、修复、交付 | 内置提示词 |
+| `/figma_delivery` | 设计对齐、UI 实现、评审、还原验证 | 内置提示词；需配置 Figma 和相关 Skills |
+| `subagent` | 单角色、并行任务、顺序链；独立 Pi 进程隔离上下文 | 内置扩展 |
+| `/fix` | 可恢复的修复工作流原型 | 可选私有扩展 |
+| 额度状态栏 / `/fast` | 订阅额度展示与优先处理接线 | 可选私有扩展 |
+| 搜索 / MCP | Tavily 搜索与 MCP 服务接入 | 可选第三方扩展 |
+| Skills | 文档驱动、服务验证、设计审计、工程偏好等 | 独立 Skills 来源 |
 
-`/feature` 在私有扩展中尚未实现，不作为已交付能力。基础恢复也不代表 Figma、飞书、模型服务已经登录或完成真实 E2E。
+五个角色各司其职：
 
-## 新电脑恢复
+- **product_aligner**：对齐目标、范围和验收标准。
+- **evidence_investigator**：调查取证，建立可复核的根因链路。
+- **implementer**：按确认的方案做最小实现。
+- **code_reviewer**：独立检查仓库规范与需求符合度。
+- **verifier**：对照验收标准验证结果。
 
-支持 macOS/Linux，需要 Node.js 22+、Git；当前验证基线是 Pi 0.84.4。先检查扩展源码再安装，它们拥有当前用户的系统权限。
+主会话负责范围、阶段决策和最终结论。提示词定义协作流程，不等同于持久化工作流引擎。
+
+## 快速开始
+
+支持 macOS/Linux，需要 Node.js 22+、Git；当前验证基线为 Pi 0.84.4。扩展拥有当前用户的系统权限，安装前应审阅源码。
 
 ```bash
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.84.4
@@ -30,89 +37,64 @@ git clone https://github.com/ZHOUKAILIAN/pi-workbench.git
 cd pi-workbench
 npm test
 
-# 默认只读：预览将创建/更新/冲突的文件
+# 先预览，再安装
 npm run plan
-# 确认后执行；不会运行 git、npm 安装或调用模型
 npm run apply
 npm run doctor
 pi
 ```
 
-首次启动用 `/login` 登录，再用 `/model` 选择实际可用的模型并 Ctrl+S 保存默认值。角色模板不绑死模型；当前 subagent 未指定模型时启动新 Pi 进程，使用 Pi 默认模型设置，**不保证继承主会话临时选中的型号**。
+首次启动使用 `/login` 登录模型服务，再通过 `/model` 选择实际可用的模型，按 Ctrl+S 保存默认值。
 
-安装目标默认是 `PI_CODING_AGENT_DIR`，未设置时为 `~/.pi/agent`。也可用绝对路径指定隔离目录：
-
-```bash
-node scripts/workbench.mjs plan --target "$HOME/pi-sandbox/agent"
-node scripts/workbench.mjs apply --target "$HOME/pi-sandbox/agent"
-node scripts/workbench.mjs doctor --target "$HOME/pi-sandbox/agent"
-PI_CODING_AGENT_DIR="$HOME/pi-sandbox/agent" pi
+```text
+/build 为这个项目增加一个导出功能
+/work 排查这个接口为什么返回错误
+/figma_delivery 按设计稿实现这个页面
 ```
 
-目标不能位于本仓库内，不能经过符号链接；在 macOS 的临时目录测试时使用真实路径而不是 `/tmp` 别名。
+安装脚本只部署配置和资源，不下载扩展、不调用模型。需要搜索、MCP、私有扩展和 Skills 时，参阅 [配置指南](docs/configuration.md)。
 
-### 加回个人扩展、Skills 和模型分工
+## 配置与安装
 
-1. 按 [迁移与依赖恢复](docs/migration.md) 克隆独立来源并安装依赖。
-2. 把 `config/local.example.json` 复制到仓库外的私有位置，填写本机 paths / model bindings。
-3. 使用同一份 local 配置安装和检查：
+- 默认安装到 `~/.pi/agent`；支持 `PI_CODING_AGENT_DIR` 或 `--target` 指定目录。
+- 仓库维护通用角色、提示词和安全默认值；本机 `local.json` 维护模型绑定和资源路径。
+- 角色默认不绑定型号。子 Pi 进程使用 Pi 默认模型设置，不保证跟随主会话临时切换的型号。
+- 扩展源码由 [my-pi-extension](https://github.com/ZHOUKAILIAN/my-pi-extension) 维护，方法论由 [skills](https://github.com/ZHOUKAILIAN/skills) 等独立来源维护，本仓库不复制它们的源码。
+- 账号、密钥、模型服务配置和运行记录只在本机管理，不提交到仓库。
 
-```bash
-mkdir -p "$HOME/.config/pi-workbench"
-cp config/local.example.json "$HOME/.config/pi-workbench/local.json"
-chmod 600 "$HOME/.config/pi-workbench/local.json"
-# 编辑 local.json 后执行：
-node scripts/workbench.mjs plan --local "$HOME/.config/pi-workbench/local.json" --with-tools
-node scripts/workbench.mjs apply --local "$HOME/.config/pi-workbench/local.json" --with-tools
-node scripts/workbench.mjs doctor --local "$HOME/.config/pi-workbench/local.json" --with-tools
-```
+本仓库使用安装脚本统一部署全局规则和角色目录，不是单靠 `pi install git:...` 就能完整安装的 Pi package。
 
-`--with-tools` 仅把 [固定 npm 来源](manifests/dependencies.json) 追加到 settings；下次 Pi 启动会处理缺失包，可能联网及执行包安装。Tavily 密钥、MCP 服务/认证、私有 provider 配置在本机单独配置，不放进 local.json 或本仓库。
+### 更新与回滚
 
-### 已有电脑：冲突与回滚
-
-- 已有托管角色、prompt、全局规则或 subagent 代码不一致时，默认整个安装拒绝写入；看清 `plan` 后才加 `--replace`。
-- settings 按“仓库默认 < 现有偏好 < local.settings”合并；资源数组追加去重。已有无关设置、文件和目录权限保留。
-- 每次发生改动，先在目标 `.workbench-backups/<ID>/` 创建私有备份；没有改动则不写文件、不新增备份。
-- `--replace` 表示认可替换托管文件，不是删除整个 agent 目录。脚本不删除额外旧文件、旧资源路径或旧 npm 版本；见迁移文档的清理步骤。
+`plan` 默认只读。托管文件与本机内容冲突时，安装会整体拒绝写入；确认差异后，才使用 `--replace`。
 
 ```bash
 node scripts/workbench.mjs apply --replace
-# 用实际输出的 backup ID；同样支持 --target
+# 使用安装输出的实际 backup ID
 node scripts/workbench.mjs restore --backup BACKUP_ID
 ```
 
-回滚只恢复本次改动：新文件删除，旧文件及原权限恢复；本次创建且仍为空的资源目录删除，原有目录、后续用户内容和备份保留。如果安装后又手改了相关托管文件，拒绝覆盖；先自行保存并对齐差异。备份可能含原 settings 中的私有配置，**不要上传**。安装/回滚时请退出 Pi，不支持与其他写配置进程并发操作或崩溃事务恢复。
+每次有改动，安装器先创建私有备份；重复安装无变化时不写文件。回滚恢复原文件及权限，删除新文件和本次创建且仍为空的资源目录，保留原有目录、后续用户内容及备份。相关托管文件被再次修改时，回滚会拒绝覆盖。
 
-## 日常维护
+安装和回滚前请退出会写配置的 Pi 进程。参数、配置合并规则及备份位置见 [配置指南](docs/configuration.md#更新与回滚)。
 
-```text
-通用角色/提示词/默认配置 -> 修改本仓库 -> 测试/评审 -> 本地安装
-扩展代码                 -> 修改 my-pi-extension -> 更新本仓库依赖基线
-方法论 skill             -> 修改 skills 的 owning source -> 更新恢复清单
-机器目录/模型绑定         -> 修改仓库外 local.json -> 预览并安装
-账号/密钥/会话            -> 仅本机私有管理
-```
-
-不要反向打包整个 `~/.pi`。通用内容在仓库修改，安装目录是部署副本；本机直接改过的文件先手工比较并脱敏，再决定回写哪一个来源。
-
-## 仓库结构
+## 目录
 
 ```text
-config/                 全局协作规则、安全默认值、local 示例
+config/                 全局协作规则、安全默认值、local 配置示例
 agents/                 五个通用角色
 prompts/                三个交付入口
-extensions/subagent/    原本只在本机的子 agent 扩展
-optional-extensions/    默认不启用的个人 provider 显示偏好
-manifests/              外部扩展和 Skills 的恢复来源及缺口
-docs/migration.md       资产边界、私有依赖恢复与迁移注意事项
-scripts/                plan / apply / doctor / restore、校验与 Pi smoke
+extensions/subagent/    子 agent 扩展
+optional-extensions/    按需启用的 provider 显示偏好
+manifests/              外部扩展、Skills 来源与版本信息
+docs/configuration.md   本机配置、依赖接入、更新与回滚
+scripts/                安装、检查、回滚和验证工具
 test/                   隔离目录中的确定性测试
 ```
 
-本仓库不是一个可单靠 `pi install git:...` 完整安装的 Pi package：Pi package 不负责部署全局 AGENTS 和自定义角色目录。因此统一使用上述安装脚本。
+通用内容在所属仓库修改、验证后再安装；安装目录是部署副本，不是第二个维护源。扩展和 Skills 更新后，按需更新 [依赖清单](manifests/dependencies.json)。
 
-## 验证与验收
+## 验证
 
 ```bash
 npm test
@@ -120,6 +102,8 @@ npm run smoke
 git diff --check
 ```
 
-验收：干净目录能恢复 5 个角色、3 个 prompt 和 subagent；真实 Pi 能发现这些资源；重复安装幂等；冲突不覆盖；安装前有备份，回滚保护后续改动；不复制登录态、模型私密目录、session 或缓存。
+- `npm test`：结构、配置、路径安全、安装幂等、冲突保护、备份与回滚。
+- `npm run smoke`：使用临时 HOME 和 agent 目录，验证真实 Pi 能发现五个角色、三个提示词、全局规则、subagent 及测试用 Skill/扩展包，不发送模型请求。
+- `doctor`：检查托管文件和声明的本机路径/配置，不验证远端权限、第三方包下载或模型服务可用性。
 
-`doctor` 检查托管文件和声明的本机路径/配置，不验证第三方包下载、远端权限或真实模型可用性。`smoke` 使用临时 HOME 和 agent 目录，运行真实 Pi 资源加载、测试夹具 skill/package，不发送模型请求。来源未确认、未发布或工作相关能力见 [恢复缺口](docs/migration.md#尚不能完全自动恢复的能力)。
+可选能力需要各自的依赖和授权；`/fix` 当前为原型，`/feature` 尚未实现。详细状态见 [可选能力与依赖](docs/configuration.md#可选能力与依赖)。

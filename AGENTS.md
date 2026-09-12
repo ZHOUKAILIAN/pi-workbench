@@ -1,11 +1,11 @@
 # Repository Instructions
 
-This repository is **Pi Workbench**, a Pi-only personal work environment and recovery entry point. The former Codex configuration and feature-delivery skill are retired; history remains in Git. Do not reintroduce Codex CLI configuration or implement a second workflow runtime here.
+This repository is **Pi Workbench**, a personal Pi work environment with reusable roles, prompts, extension sources and safe installation tools. Keep the workbench focused on configuration and composition; workflow engines and external skills remain in their owning repositories.
 
 ## Source of truth
 
 - `README.md`: product goal, installation interface and acceptance criteria.
-- `docs/migration.md`: carrying boundaries, dependency recovery and migration limitations.
+- `docs/configuration.md`: local configuration, optional dependencies, updates, rollback and verification boundaries.
 - `config/AGENTS.md`: portable global collaboration rules, installed to the Pi agent directory. This root file governs development of this repository only.
 - `config/settings.json`: safe defaults; local credentials and model catalogs never belong here.
 - `agents/*.md`: reusable role definitions; `prompts/*.md`: workflow entry prompts.
@@ -15,8 +15,8 @@ This repository is **Pi Workbench**, a Pi-only personal work environment and rec
 
 ## Change rules
 
-- One purpose per branch. Preserve unrelated work and use an isolated worktree for migration.
-- Route changes back into this README and the existing migration document, rather than adding task-specific requirement files.
+- One purpose per branch. Preserve unrelated work and keep changes scoped.
+- Route documentation changes back into README and the configuration guide, rather than adding task-specific reports. Describe the current product and usage, not the history of how the repository was built.
 - Never import private extension code, credentials, customer data, provider endpoints, machine paths, raw sessions, caches or backups into public history.
 - Install is explicit. Never test against the real user agent directory. Tests use isolated temporary directories and must not call a model or install packages.
 - `plan` is read-only. Conflicting managed files require `--replace`. Every changed apply must have a private rollback backup before any managed file is modified.
@@ -27,7 +27,7 @@ This repository is **Pi Workbench**, a Pi-only personal work environment and rec
 
 ## Verification
 
-1. `npm test` (structure, portability and deterministic migration tests).
+1. `npm test` (structure, portability and deterministic installation/rollback tests).
 2. `npm run smoke` when Pi is installed (isolated, no provider calls); otherwise report it blocked.
 3. `git diff --check` and inspect staged/new files for secrets, privacy and machine paths.
 4. Report actual verification evidence and external dependencies not tested; never equate source presence with provider E2E readiness.
