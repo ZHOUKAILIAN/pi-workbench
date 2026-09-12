@@ -2,7 +2,7 @@
 
 可迁移的个人 Pi 工作环境：换电脑、换工作，仍能恢复自己的角色分工、交付流程、工具与方法论。
 
-本仓库已转为 **Pi-only**。旧 Codex CLI 配置、快照和 feature-delivery skill 不再维护，历史保留在 Git 中。当前 GitHub 地址仍是原仓库地址；显示名和本地目录采用 Pi Workbench。
+本仓库已转为 **Pi-only**。旧 Codex CLI 配置、快照和 feature-delivery skill 不再维护，历史保留在 Git 中。仓库已由 `codex-agent-team` 更名为 [pi-workbench](https://github.com/ZHOUKAILIAN/pi-workbench)。
 
 ## 我的能力入口
 
@@ -26,7 +26,7 @@
 
 ```bash
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.84.4
-git clone https://github.com/ZHOUKAILIAN/codex-agent-team.git pi-workbench
+git clone https://github.com/ZHOUKAILIAN/pi-workbench.git
 cd pi-workbench
 npm test
 
