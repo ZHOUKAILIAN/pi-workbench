@@ -1,31 +1,33 @@
 # Repository Instructions
 
-This repository is a Codex-native agent and workflow asset library. Keep Codex as the executor and do not add a custom agent runtime unless the user explicitly changes the product boundary.
+This repository is **Pi Workbench**, a Pi-only personal work environment and recovery entry point. The former Codex configuration and feature-delivery skill are retired; history remains in Git. Do not reintroduce Codex CLI configuration or implement a second workflow runtime here.
 
 ## Source of truth
 
-- `.agents/skills/*/references/agents/*.md` owns reusable role prompts.
-- `.agents/skills/*/SKILL.md` owns workflow sequencing, prompt selection, and gates.
-- Each skill's `skill.json` owns machine-readable discovery metadata.
-- Each skill's `agents/openai.yaml` owns UI-facing name, description, and default prompt.
-- `.codex/config.toml` owns project-level concurrency and depth defaults.
-- `examples/` contains sanitized evidence only.
-
-Do not duplicate role instructions in a generic prompt folder, unsupported custom-agent config, or workflow YAML.
+- `README.md`: product goal, installation interface and acceptance criteria.
+- `docs/migration.md`: carrying boundaries, dependency recovery and migration limitations.
+- `config/AGENTS.md`: portable global collaboration rules, installed to the Pi agent directory. This root file governs development of this repository only.
+- `config/settings.json`: safe defaults; local credentials and model catalogs never belong here.
+- `agents/*.md`: reusable role definitions; `prompts/*.md`: workflow entry prompts.
+- `extensions/subagent/`: the adopted standalone subagent implementation, originating in Pi's MIT example and the user's local customization. Keep attribution in `THIRD_PARTY_NOTICES.md`.
+- `manifests/dependencies.json`: external source locations and pinned recovery references. External skills and private extensions keep their own repositories as the source of truth.
+- `scripts/workbench.mjs`: install/plan/doctor/restore behavior; `test/`: deterministic tests.
 
 ## Change rules
 
-- Keep every delegated task bounded and independently executable.
-- State write scope, output contract, completion criteria, and escalation conditions.
-- Never assign overlapping writes to parallel agents.
-- The parent agent owns scope decisions, gate decisions, conflict resolution, and the final claim.
-- Never commit credentials, personal data, customer data, raw sessions, or machine-specific secrets.
+- One purpose per branch. Preserve unrelated work and use an isolated worktree for migration.
+- Route changes back into this README and the existing migration document, rather than adding task-specific requirement files.
+- Never import private extension code, credentials, customer data, provider endpoints, machine paths, raw sessions, caches or backups into public history.
+- Install is explicit. Never test against the real user agent directory. Tests use isolated temporary directories and must not call a model or install packages.
+- `plan` is read-only. Conflicting managed files require `--replace`. Every changed apply must have a private rollback backup before any managed file is modified.
+- Preserve unrelated settings/files and directory permissions. Rollback refuses post-install edits. Reject symlink write targets and path traversal.
+- Keep CLI dependencies limited to Node built-ins. Use Pi's documented discovery paths rather than building a registry or custom runtime.
+- Review the current diff plus affected references and adjacent contracts, not the entire unrelated workspace. No overlapping parallel writes.
+- After review passes, make a scoped local commit; push, GitHub rename and live configuration deployment require user authorization.
 
 ## Verification
 
-For every change:
-
-1. Run `npm test`.
-2. Run `codex -C . debug prompt-input "validate Codex agent assets"` when Codex is installed.
-3. Confirm the model-visible prompt contains changed skill names and startup output has no warning caused by changed assets.
-4. Review `git diff --check` and scan the diff for secrets and machine-specific paths.
+1. `npm test` (structure, portability and deterministic migration tests).
+2. `npm run smoke` when Pi is installed (isolated, no provider calls); otherwise report it blocked.
+3. `git diff --check` and inspect staged/new files for secrets, privacy and machine paths.
+4. Report actual verification evidence and external dependencies not tested; never equate source presence with provider E2E readiness.

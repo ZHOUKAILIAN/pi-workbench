@@ -1,0 +1,5 @@
+{
+  "theme": "light",
+  "defaultThinkingLevel": "high",
+  "transport": "sse"
+}

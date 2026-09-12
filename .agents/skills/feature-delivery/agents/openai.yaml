@@ -1,4 +1,0 @@
-interface:
-  display_name: "Feature Delivery"
-  short_description: "Multi-agent delivery with independent verification"
-  default_prompt: "Use $feature-delivery to deliver this change through explicit scope, implementation, QA, and review."

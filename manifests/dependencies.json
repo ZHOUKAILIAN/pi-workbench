@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "pi": { "package": "@earendil-works/pi-coding-agent", "testedVersion": "0.84.4", "node": ">=22" },
+  "npmPackages": [
+    { "source": "npm:@tavily/pi-extension@0.1.2", "purpose": "Web search and extraction; requires a private TAVILY_API_KEY" },
+    { "source": "npm:pi-mcp-adapter@2.26.1", "purpose": "MCP integration; configure servers and authenticate on each machine" }
+  ],
+  "repositories": [
+    {
+      "name": "my-pi-extension",
+      "url": "https://github.com/ZHOUKAILIAN/my-pi-extension.git",
+      "visibility": "private",
+      "ref": "e88085b312a7293b609cab81a480015e4297efd0",
+      "packages": ["packages/fix", "packages/codex-usage-status"],
+      "setup": "npm ci --ignore-scripts",
+      "status": "optional-source-recovery; provider E2E not verified here"
+    },
+    {
+      "name": "skills",
+      "url": "https://github.com/ZHOUKAILIAN/skills.git",
+      "visibility": "public",
+      "ref": "1b56c916054891d8fd309ddc5a8563f2acc71ac6",
+      "recommendedSkills": [
+        "ai-doc-driven-dev", "backend-regression-maintenance", "backend-service-verification",
+        "css-best-practices", "figma-design-audit", "figma-restoration-review",
+        "five-layer-classifier", "frontier-changelog", "skill-lifecycle", "skill-standard",
+        "zhoukailian-development-preferences", "zhoukailian-repeated-workflows"
+      ],
+      "status": "remote-baseline; local unpublished edits are not included"
+    }
+  ],
+  "manualRecovery": [
+    { "names": ["code-review", "domain-modeling", "grill-me", "grill-with-docs", "grilling", "tdd"], "status": "local-source-unconfirmed", "action": "Confirm upstream and revision, or retain a private copy; do not guess installation URLs" },
+    { "names": ["find-skills"], "source": "https://github.com/vercel-labs/skills", "path": "skills/find-skills", "status": "source-known-revision-unpinned" },
+    { "names": ["lark-doc", "lark-openapi-explorer", "lark-sheets", "lark-wiki"], "source": "https://open.feishu.cn", "status": "official-source-known; CLI and authentication require manual setup" },
+    { "names": ["personal-change-management"], "status": "local-unpublished", "action": "Publish in the owning skills repository after a separate review" },
+    { "names": ["debug-skills"], "status": "work-specific-private", "action": "Configure only for the authorized work environment; not a default personal dependency" }
+  ]
+}

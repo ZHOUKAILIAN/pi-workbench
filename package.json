@@ -1,12 +1,15 @@
 {
-  "name": "codex-agent-team-assets",
+  "name": "pi-workbench",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Portable personal Pi environment: roles, prompts, configuration and safe recovery",
+  "engines": { "node": ">=22" },
   "scripts": {
-    "test": "node scripts/validate.mjs"
-  },
-  "engines": {
-    "node": ">=22"
+    "test": "node scripts/validate.mjs && node --test test/*.test.mjs",
+    "plan": "node scripts/workbench.mjs plan",
+    "apply": "node scripts/workbench.mjs apply",
+    "doctor": "node scripts/workbench.mjs doctor",
+    "smoke": "node scripts/smoke.mjs"
   }
 }

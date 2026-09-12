@@ -1,136 +1,91 @@
 import fs from "node:fs";
 import path from "node:path";
+import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-
-function fail(message) {
-  failures.push(message);
-}
-
-function read(relativePath) {
-  return fs.readFileSync(path.join(root, relativePath), "utf8");
-}
-
-function listFiles(relativeDir, suffix) {
-  const absoluteDir = path.join(root, relativeDir);
-  if (!fs.existsSync(absoluteDir)) return [];
-  return fs
-    .readdirSync(absoluteDir, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(suffix))
-    .map((entry) => path.join(entry.parentPath, entry.name));
-}
-
-const roleFiles = listFiles(".agents/skills/feature-delivery/references/agents", ".md");
-if (roleFiles.length < 5) {
-  fail(`expected at least 5 role prompts, found ${roleFiles.length}`);
-}
-
-const roleHeadings = [
-  "## Responsibility",
-  "## Boundaries",
-  "## Required input",
-  "## Output contract",
-  "## Completion and escalation",
-];
-
-for (const absolutePath of roleFiles) {
-  const relativePath = path.relative(root, absolutePath);
-  const source = fs.readFileSync(absolutePath, "utf8");
-  if (!source.match(/^#\s+\S/m)) fail(`${relativePath}: missing role title`);
-  for (const heading of roleHeadings) {
-    if (!source.includes(heading)) fail(`${relativePath}: missing ${heading}`);
+const check = (condition, message) => { if (!condition) failures.push(message); };
+const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
+const roles = ["code_reviewer", "evidence_investigator", "implementer", "product_aligner", "verifier"];
+const prompts = ["build", "figma_delivery", "work"];
+const tools = new Set(["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"]);
+const excluded = new Set([".git", ".pi", "node_modules", "dist", "coverage", "local", ".DS_Store"]);
+const forbiddenNames = new Set(["auth.json", "models.json", "models-store.json", "mcp.json", "mcp-cache.json", "trust.json", "sessions", "workflow-runs", ".workbench-backups"]);
+const files = [];
+function walk(dir = "") {
+  for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+    if (excluded.has(entry.name)) continue;
+    const name = path.join(dir, entry.name);
+    check(!forbiddenNames.has(entry.name), `private runtime asset: ${name}`);
+    check(!entry.isSymbolicLink(), `source symlink: ${name}`);
+    if (entry.isDirectory()) walk(name);
+    else if (entry.isFile()) files.push(name);
   }
 }
-
-const skillRoots = fs.existsSync(path.join(root, ".agents/skills"))
-  ? fs
-      .readdirSync(path.join(root, ".agents/skills"), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(".agents/skills", entry.name))
-  : [];
-
-if (skillRoots.length === 0) fail("expected at least one project skill");
-
-const controllerHeadings = [
-  "## Core Rule",
-  "## Priority",
-  "## Active Mode",
-  "## Gates",
-  "## Red Flags",
-  "## Handoff Rules",
-  "## Completion Signal",
-];
-
-for (const skillRoot of skillRoots) {
-  const skillMdPath = path.join(skillRoot, "SKILL.md");
-  const skillJsonPath = path.join(skillRoot, "skill.json");
-  const openaiYamlPath = path.join(skillRoot, "agents/openai.yaml");
-  if (!fs.existsSync(path.join(root, skillMdPath))) {
-    fail(`${skillRoot}: missing SKILL.md`);
-    continue;
+walk();
+for (const legacy of [".codex", "local-codex", ".agents/skills/feature-delivery"]) {
+  check(!fs.existsSync(path.join(root, legacy)), `retired entry still exists: ${legacy}`);
+}
+for (const [dir, expected] of [["agents", roles], ["prompts", prompts]]) {
+  const actual = files.filter((f) => path.dirname(f) === dir && f.endsWith(".md")).map((f) => path.basename(f, ".md")).sort();
+  check(JSON.stringify(actual) === JSON.stringify(expected), `${dir}: expected ${expected.join(", ")}`);
+}
+for (const name of roles) {
+  const file = `agents/${name}.md`;
+  if (!files.includes(file)) continue;
+  const text = read(file);
+  const front = text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+  check(front.includes(`name: ${name}\n`), `${file}: name mismatch`);
+  check(/^description: .+/m.test(front), `${file}: missing description`);
+  check(!/^(?:model|fallback-models):/m.test(front), `${file}: model binding belongs in private local configuration`);
+  const selected = front.match(/^tools: (.+)$/m)?.[1].split(",").map((t) => t.trim()) ?? [];
+  check(selected.length > 0 && selected.every((t) => tools.has(t)), `${file}: unsupported tools`);
+  if (name !== "implementer") check(!selected.some((t) => ["edit", "write"].includes(t)), `${file}: read-only role has write tool`);
+}
+for (const name of prompts) {
+  const file = `prompts/${name}.md`;
+  if (!files.includes(file)) continue;
+  const text = read(file);
+  check(text.startsWith("---\n") && /^description: .+/m.test(text), `${file}: missing frontmatter`);
+  check(text.includes("$ARGUMENTS"), `${file}: missing argument expansion`);
+  check(!/\b(?:gpt-\d|glm-\d|kimi-k\d|smartingredients)/i.test(text), `${file}: hardcoded model`);
+}
+for (const name of files) {
+  const text = read(name);
+  check(!/\/Users\/[^/\s]+|\/home\/[^/\s]+|[A-Z]:\\Users\\/i.test(text), `${name}: machine-specific path`);
+  check(!/-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----|\bgh[pousr]_[A-Za-z0-9]{20,}|\bsk-[A-Za-z0-9_-]{24,}/.test(text), `${name}: possible secret`);
+  if (name.endsWith(".json")) {
+    try { JSON.parse(text); } catch { failures.push(`${name}: invalid JSON`); }
   }
-  if (!fs.existsSync(path.join(root, skillJsonPath))) {
-    fail(`${skillRoot}: missing skill.json`);
-    continue;
-  }
-  if (!fs.existsSync(path.join(root, openaiYamlPath))) {
-    fail(`${skillRoot}: missing agents/openai.yaml`);
-    continue;
-  }
-
-  const markdown = read(skillMdPath);
-  const frontmatter = markdown.match(/^---\n([\s\S]*?)\n---/m)?.[1] ?? "";
-  const markdownName = frontmatter.match(/^name:\s*(.+)$/m)?.[1]?.trim();
-  const markdownDescription = frontmatter.match(/^description:\s*(.+)$/m)?.[1]?.trim();
-  let metadata;
-  try {
-    metadata = JSON.parse(read(skillJsonPath));
-  } catch (error) {
-    fail(`${skillJsonPath}: invalid JSON: ${error.message}`);
-    continue;
-  }
-
-  if (!markdownName || !markdownDescription) fail(`${skillMdPath}: incomplete frontmatter`);
-  if (metadata.name !== markdownName) fail(`${skillRoot}: SKILL.md and skill.json names differ`);
-  if (metadata.description !== markdownDescription) {
-    fail(`${skillRoot}: SKILL.md and skill.json descriptions differ`);
-  }
-  if (metadata.sub_skills && !Array.isArray(metadata.sub_skills)) {
-    fail(`${skillJsonPath}: sub_skills must be an array`);
-  }
-  const openaiYaml = read(openaiYamlPath);
-  if (!openaiYaml.includes(`$${metadata.name}`)) {
-    fail(`${openaiYamlPath}: default_prompt must mention $${metadata.name}`);
-  }
-  for (const heading of controllerHeadings) {
-    if (!markdown.includes(heading)) fail(`${skillMdPath}: missing ${heading}`);
+  if (name.endsWith(".md")) {
+    for (const [, target] of text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+      if (/^(?:https?:|mailto:|#)/.test(target)) continue;
+      const filename = decodeURIComponent(target.split("#")[0]);
+      check(fs.existsSync(path.resolve(root, path.dirname(name), filename)), `${name}: broken link ${target}`);
+    }
   }
 }
-
-for (const legacyDir of ["agents", "prompts", "teams", "schemas", "templates"]) {
-  if (fs.existsSync(path.join(root, legacyDir))) {
-    fail(`${legacyDir}/ is a legacy duplicate source; use Codex-native paths`);
+try {
+  const manifest = JSON.parse(read("manifests/dependencies.json"));
+  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.pi.package, "@earendil-works/pi-coding-agent");
+  assert.match(manifest.pi.testedVersion, /^\d+\.\d+\.\d+$/);
+  assert.equal(manifest.npmPackages.length, 2);
+  for (const item of manifest.npmPackages) assert.match(item.source, /^npm:.+@\d+\.\d+\.\d+$/);
+  for (const item of manifest.repositories) {
+    assert.match(item.ref, /^[a-f0-9]{40}$/);
+    const url = new URL(item.url);
+    assert.equal(url.hostname, "github.com");
+    assert.equal(url.username + url.password, "");
   }
-}
-
-const markdownFiles = ["README.md", "AGENTS.md", ...listFiles(".agents/skills", ".md").map((file) => path.relative(root, file))];
-for (const markdownPath of markdownFiles) {
-  const source = read(markdownPath);
-  for (const match of source.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
-    const target = match[1];
-    if (/^(https?:|#)/.test(target)) continue;
-    const withoutAnchor = target.split("#", 1)[0];
-    const resolved = path.resolve(path.dirname(path.join(root, markdownPath)), withoutAnchor);
-    if (!fs.existsSync(resolved)) fail(`${markdownPath}: broken local link ${target}`);
-  }
-}
-
-if (failures.length > 0) {
-  console.error("Validation failed:");
-  for (const failure of failures) console.error(`- ${failure}`);
-  process.exit(1);
-}
-
-console.log(`Validated ${roleFiles.length} role prompts and ${skillRoots.length} workflow skill.`);
+  const defaults = JSON.parse(read("config/settings.json"));
+  assert.deepEqual(Object.keys(defaults).sort(), ["defaultThinkingLevel", "theme", "transport"]);
+  assert.deepEqual(JSON.parse(read("config/local.example.json")), { settings: {}, agentModels: {}, skills: [], packages: [] });
+  assert.equal(JSON.parse(read("package.json")).name, "pi-workbench");
+  for (const file of ["extensions/subagent/index.ts", "extensions/subagent/agents.ts", "scripts/workbench.mjs", "scripts/smoke.mjs", "THIRD_PARTY_NOTICES.md"]) assert.ok(files.includes(file), `missing ${file}`);
+} catch (error) { failures.push(`contract: ${error.message}`); }
+if (failures.length) {
+  console.error(failures.map((f) => `- ${f}`).join("\n"));
+  process.exitCode = 1;
+} else console.log(`Validated ${roles.length} roles, ${prompts.length} prompts and ${files.length} source files (private/generated directories excluded).`);
