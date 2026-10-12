@@ -9,8 +9,7 @@ This repository is **Pi Workbench**, a personal Pi work environment with reusabl
 - `config/AGENTS.md`: portable global collaboration rules, installed to the Pi agent directory. This root file governs development of this repository only.
 - `config/settings.json`: safe defaults; local credentials and model catalogs never belong here.
 - `agents/*.md`: reusable role definitions; `prompts/*.md`: workflow entry prompts.
-- `extensions/subagent/`: the adopted standalone subagent implementation, originating in Pi's MIT example and the user's local customization. Keep attribution in `THIRD_PARTY_NOTICES.md`.
-- `manifests/dependencies.json`: external source locations and pinned recovery references. External skills and private extensions keep their own repositories as the source of truth.
+- `manifests/dependencies.json`: external source locations and pinned recovery references. `@pi/subagent` is owned only by `my-pi-extension`; external skills and extensions keep their own repositories as the source of truth. Do not reintroduce a standalone subagent copy. Historical attribution stays in `THIRD_PARTY_NOTICES.md`.
 - `scripts/workbench.mjs`: install/plan/doctor/restore behavior; `test/`: deterministic tests.
 
 ## Change rules
@@ -21,13 +20,13 @@ This repository is **Pi Workbench**, a personal Pi work environment with reusabl
 - Install is explicit. Never test against the real user agent directory. Tests use isolated temporary directories and must not call a model or install packages.
 - `plan` is read-only. Conflicting managed files require `--replace`. Every changed apply must have a private rollback backup before any managed file is modified.
 - Preserve unrelated settings/files and directory permissions. Rollback refuses post-install edits. Reject symlink write targets and path traversal.
-- Keep CLI dependencies limited to Node built-ins. Use Pi's documented discovery paths rather than building a registry or custom runtime.
+- Keep CLI dependencies limited to Node built-ins. Use Pi's documented package/discovery paths rather than building a registry or custom runtime. External subagent is configured through an existing absolute package directory; do not implicitly clone/install packages. Detect known legacy sources and block apply even with --replace, without deleting user files. Keep explicit restore of old backup receipts compatible.
 - Review the current diff plus affected references and adjacent contracts, not the entire unrelated workspace. No overlapping parallel writes.
 - After review passes, make a scoped local commit; push, GitHub rename and live configuration deployment require user authorization.
 
 ## Verification
 
 1. `npm test` (structure, portability and deterministic installation/rollback tests).
-2. `npm run smoke` when Pi is installed (isolated, no provider calls); otherwise report it blocked.
+2. `npm run smoke` when Pi is installed (isolated base-resource discovery, no provider calls); use `npm run smoke -- --subagent-package <absolute-package-directory>` to additionally check real external tool registration and session schema. Neither test proves child execution/resume E2E; otherwise report the missing environment.
 3. `git diff --check` and inspect staged/new files for secrets, privacy and machine paths.
 4. Report actual verification evidence and external dependencies not tested; never equate source presence with provider E2E readiness.

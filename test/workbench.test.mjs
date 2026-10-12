@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { apply, buildPlan, doctor, parseArgs, restore } from "../scripts/workbench.mjs";
 
@@ -13,17 +14,19 @@ function fixture() {
   const tempRoot = fs.realpathSync(os.tmpdir());
   const root = fs.mkdtempSync(path.join(tempRoot, "pi-workbench-repo-"));
   roots.push(root);
-  put(path.join(root, "config/settings.json"), JSON.stringify({ defaultModel: "base", theme: "light", unknown: { retained: true }, skills: ["base-skill"], packages: ["base-package"] }));
+  const subagent = fs.mkdtempSync(path.join(tempRoot, "pi-workbench-subagent-"));
+  roots.push(subagent);
+  put(path.join(subagent, "package.json"), JSON.stringify({ name: "@pi/subagent", pi: { extensions: ["src/index.ts"] } }));
+  put(path.join(subagent, "src/index.ts"), "export default function() {}\n");
+  put(path.join(root, "config/settings.json"), JSON.stringify({ defaultModel: "base", theme: "light", unknown: { retained: true }, skills: ["base-skill"], packages: ["base-package", subagent] }));
   put(path.join(root, "config/AGENTS.md"), "repo agents\n");
   put(path.join(root, "agents/verifier.md"), "---\nname: verifier\nmodel: old/provider\ndescription: verify\n---\nverify\n");
   put(path.join(root, "agents/plain.md"), "---\nname: plain\ndescription: plain\n---\nplain\n");
   put(path.join(root, "prompts/work.md"), "work\n");
-  put(path.join(root, "extensions/subagent/index.ts"), "export const index = true;\n");
-  put(path.join(root, "extensions/subagent/agents.ts"), "export const agents = true;\n");
   put(path.join(root, "manifests/dependencies.json"), JSON.stringify({ npmPackages: [{ source: "npm:pi-tool@1.2.3", purpose: "test tool" }] }));
   const target = path.join(path.dirname(root), `pi-workbench-target-${path.basename(root)}`);
   roots.push(target);
-  return { root, target };
+  return { root, target, subagent };
 }
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
 const opts = (f, extra = {}) => ({ repoRoot: f.root, target: f.target, ...extra });
@@ -39,6 +42,8 @@ test("plan is read-only and clean apply installs Pi resources", () => {
   const plan = buildPlan(opts(f, { localPath: local, withTools: true }));
   assert.equal(fs.existsSync(f.target), false);
   assert.deepEqual(plan.conflicts, []);
+  assert.deepEqual(plan.subagent.issues, []);
+  assert.equal(plan.files.some(item => item.relative.startsWith("extensions/")), false);
   const result = apply(opts(f, { localPath: local, withTools: true }));
   assert.equal(result.changed, true);
   assert.ok(result.backupId);
@@ -47,7 +52,8 @@ test("plan is read-only and clean apply installs Pi resources", () => {
   assert.equal(settings.defaultModel, "local-model");
   assert.equal(settings.unknown.retained, true);
   assert.deepEqual(settings.skills, ["base-skill", skill]);
-  assert.deepEqual(settings.packages, ["base-package", pkg, "npm:pi-tool@1.2.3"]);
+  assert.deepEqual(settings.packages, ["base-package", f.subagent, pkg, "npm:pi-tool@1.2.3"]);
+  assert.equal(fs.existsSync(path.join(f.target, "extensions")), false);
   assert.match(fs.readFileSync(path.join(f.target, "agents/verifier.md"), "utf8"), /model: "local\/provider"/);
   assert.doesNotMatch(fs.readFileSync(path.join(f.target, "agents/plain.md"), "utf8"), /model:/);
   assert.equal(doctor(opts(f, { localPath: local, withTools: true })).ok, true);
@@ -154,8 +160,7 @@ test("new directories are private and existing directory and file modes are pres
   assert.equal(fs.statSync(path.join(f.target, "prompts")).mode & 0o777, 0o711);
   assert.equal(fs.statSync(path.join(f.target, "settings.json")).mode & 0o777, 0o640);
   assert.equal(fs.statSync(path.join(f.target, "AGENTS.md")).mode & 0o777, 0o600);
-  assert.equal(fs.statSync(path.join(f.target, "extensions")).mode & 0o777, 0o700);
-  assert.equal(fs.statSync(path.join(f.target, "extensions/subagent")).mode & 0o777, 0o700);
+  assert.equal(fs.existsSync(path.join(f.target, "extensions")), false);
 });
 
 test("local null, unknown role, and unsafe model values are rejected without echoing local data", () => {
@@ -280,6 +285,133 @@ test("with-tools adds exact sources only once across repeated installs", () => {
   apply(opts(f, { withTools: true }));
   assert.equal(apply(opts(f, { withTools: true })).changed, false);
   assert.equal(readJson(path.join(f.target, "settings.json")).packages.filter(p => p === "npm:pi-tool@1.2.3").length, 1);
+});
+
+test("base resources install without subagent but doctor does not claim independent-review readiness", () => {
+  const f = fixture();
+  put(path.join(f.root, "config/settings.json"), JSON.stringify({ packages: [] }));
+  const plan = buildPlan(opts(f));
+  assert.match(plan.subagent.issues[0], /not configured/);
+  apply(opts(f));
+  assert.equal(fs.existsSync(path.join(f.target, "extensions")), false);
+  const health = doctor(opts(f));
+  assert.equal(health.ok, false);
+  assert.equal(health.issues.length, 1);
+  assert.match(health.issues[0], /not configured/);
+});
+
+test("legacy subagent sources block apply without writes or deletion, including replace", () => {
+  for (const relative of ["extensions/subagent/index.ts", "extensions/subagent.ts", "extensions/subagent.js"]) {
+    const f = fixture();
+    const legacy = path.join(f.target, relative);
+    put(legacy, "user customized legacy source\n");
+    const before = fs.readFileSync(legacy);
+    assert.match(buildPlan(opts(f)).subagent.issues.join("; "), /legacy subagent/);
+    for (const replace of [false, true]) assert.throws(() => apply(opts(f, { replace })), /legacy subagent source detected/);
+    assert.deepEqual(fs.readFileSync(legacy), before);
+    assert.equal(fs.existsSync(path.join(f.target, "settings.json")), false);
+    assert.equal(fs.existsSync(path.join(f.target, ".workbench-backups")), false);
+    assert.equal(doctor(opts(f)).ok, false);
+  }
+});
+
+test("external subagent identity is independent of path name; duplicate declarations block apply", () => {
+  const f = fixture();
+  const local = path.join(f.root, "local.json");
+  // A second declaration through the object form would load the same identity twice.
+  put(local, JSON.stringify({ packages: [] }));
+  mkdir(f.target);
+  put(path.join(f.target, "settings.json"), JSON.stringify({ packages: [{ source: f.subagent }] }));
+  const plan = buildPlan(opts(f, { localPath: local }));
+  assert.equal(plan.subagent.selected.length, 2);
+  assert.match(plan.subagent.issues.join("; "), /multiple external/);
+  assert.throws(() => apply(opts(f, { localPath: local })), /external subagent configuration is invalid/);
+  assert.equal(fs.existsSync(path.join(f.target, ".workbench-backups")), false);
+});
+
+test("disabled first declarations cannot be hidden by appending an enabled local path", () => {
+  const f = fixture();
+  put(path.join(f.root, "config/settings.json"), JSON.stringify({ packages: [] }));
+  const local = path.join(f.root, "local.json");
+  put(local, JSON.stringify({ packages: [f.subagent] }));
+  const existing = JSON.stringify({ packages: [{ source: f.subagent, extensions: [] }] });
+  put(path.join(f.target, "settings.json"), existing);
+  const plan = buildPlan(opts(f, { localPath: local }));
+  assert.equal(plan.subagent.selected.length, 1);
+  assert.equal(plan.subagent.declarations.length, 2);
+  assert.match(plan.subagent.issues.join("; "), /including disabled/);
+  assert.equal(doctor(opts(f, { localPath: local })).ok, false);
+  for (const replace of [false, true]) assert.throws(() => apply(opts(f, { localPath: local, replace })), /external subagent configuration is invalid/);
+  assert.equal(fs.readFileSync(path.join(f.target, "settings.json"), "utf8"), existing);
+  assert.equal(fs.existsSync(path.join(f.target, ".workbench-backups")), false);
+  // An explicitly corrected declaration is healthy; the installer does not correct it itself.
+  put(path.join(f.target, "settings.json"), JSON.stringify({ packages: [f.subagent] }));
+  apply(opts(f, { localPath: local }));
+  assert.equal(doctor(opts(f, { localPath: local })).ok, true);
+  assert.deepEqual(readJson(path.join(f.target, "settings.json")).packages, [f.subagent]);
+});
+
+test("non-autoload subagent is rejected before writes; explicit autoload true is supported", () => {
+  const f = fixture();
+  put(path.join(f.root, "config/settings.json"), JSON.stringify({ packages: [] }));
+  const existing = JSON.stringify({ packages: [{ source: f.subagent, autoload: false }] });
+  put(path.join(f.target, "settings.json"), existing);
+  const plan = buildPlan(opts(f));
+  assert.equal(plan.subagent.declarations.length, 1);
+  assert.equal(plan.subagent.invalid, true);
+  assert.equal(doctor(opts(f)).ok, false);
+  assert.throws(() => apply(opts(f, { replace: true })), /external subagent configuration is invalid/);
+  assert.equal(fs.readFileSync(path.join(f.target, "settings.json"), "utf8"), existing);
+  assert.equal(fs.existsSync(path.join(f.target, ".workbench-backups")), false);
+  put(path.join(f.target, "settings.json"), JSON.stringify({ packages: [{ source: f.subagent, autoload: true }] }));
+  apply(opts(f));
+  assert.equal(doctor(opts(f)).ok, true);
+});
+
+test("external subagent entries and filters cannot produce a false healthy doctor result", () => {
+  const badEntries = ["../outside.ts", "/absolute.ts", "src/missing.ts", "src/*.ts", "src\\index.ts"];
+  for (const entry of badEntries) {
+    const f = fixture();
+    put(path.join(f.subagent, "package.json"), JSON.stringify({ name: "@pi/subagent", pi: { extensions: [entry] } }));
+    assert.equal(buildPlan(opts(f)).subagent.invalid, true);
+    assert.throws(() => apply(opts(f)), /external subagent configuration is invalid/);
+    assert.equal(fs.existsSync(f.target), false);
+  }
+  const f = fixture();
+  put(path.join(f.root, "config/settings.json"), JSON.stringify({ packages: [{ source: f.subagent, extensions: [] }] }));
+  assert.equal(buildPlan(opts(f)).subagent.selected.length, 0);
+  assert.match(buildPlan(opts(f)).subagent.issues.join("; "), /not configured/);
+  put(path.join(f.root, "config/settings.json"), JSON.stringify({ packages: [{ source: f.subagent, extensions: ["src/index.ts"] }] }));
+  assert.equal(buildPlan(opts(f)).subagent.invalid, true);
+  put(path.join(f.root, "config/settings.json"), JSON.stringify({ packages: [f.subagent] }));
+  fs.unlinkSync(path.join(f.subagent, "src/index.ts"));
+  fs.symlinkSync(path.join(f.subagent, "package.json"), path.join(f.subagent, "src/index.ts"));
+  assert.equal(buildPlan(opts(f)).subagent.invalid, true);
+});
+
+test("explicit restore accepts legacy extension receipts without reinstalling a source copy", () => {
+  const f = fixture();
+  const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
+  const id = "old-install";
+  const backup = path.join(f.target, ".workbench-backups", id);
+  const original = "original user extension\n";
+  const installed = "old workbench extension\n";
+  put(path.join(f.target, "extensions/subagent/index.ts"), installed);
+  put(path.join(f.target, "extensions/subagent/agents.ts"), installed);
+  put(path.join(backup, "files/index.ts"), original);
+  put(path.join(backup, "manifest.json"), JSON.stringify({ version: 1, createdDirectories: ["extensions", "extensions/subagent"], files: [
+    { path: "extensions/subagent/index.ts", before: { hash: hash(original), mode: 0o600 }, afterHash: hash(installed), backup: "files/index.ts" },
+    { path: "extensions/subagent/agents.ts", before: null, afterHash: hash(installed) },
+  ] }));
+  put(path.join(f.target, "extensions/subagent/index.ts"), "post-install user edit\n");
+  assert.throws(() => restore(opts(f, { backupId: id })), /target changed/);
+  assert.equal(fs.readFileSync(path.join(f.target, "extensions/subagent/agents.ts"), "utf8"), installed);
+  put(path.join(f.target, "extensions/subagent/index.ts"), installed);
+  restore(opts(f, { backupId: id }));
+  assert.equal(fs.readFileSync(path.join(f.target, "extensions/subagent/index.ts"), "utf8"), original);
+  assert.equal(fs.statSync(path.join(f.target, "extensions/subagent/index.ts")).mode & 0o777, 0o600);
+  assert.equal(fs.existsSync(path.join(f.target, "extensions/subagent/agents.ts")), false);
+  assert.equal(fs.existsSync(path.join(f.target, "extensions/subagent")), true);
 });
 
 test("help parses without planning or creating the default target", () => {

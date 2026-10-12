@@ -66,6 +66,18 @@ node scripts/workbench.mjs doctor --local "$HOME/.config/pi-workbench/local.json
 
 不要在 local.json 中填写 apiKey、headers、baseUrl 或命令配置。模型服务、Tavily 密钥、MCP 服务及认证由对应工具在本机配置；auth.json、models.json、mcp.json、session 和缓存不由本仓库采集或导出。
 
+## 协作流程与入口
+
+`config/AGENTS.md` 安装为全局协作规则；`/build`、`/work`、`/figma_delivery` 共享这些边界，不需要为了采用默认分工增加命令或修改扩展。
+
+- 默认由主会话连续实现、自检与修复，保留需求讨论上下文。implementer 仅承接具备独立契约、互不重叠写入、可独立验证输出和实际并行收益的子任务，或用户明确指定的执行任务。
+- 独立 code_reviewer 审完整约定功能及关联调用链。记录原始固定功能基准和已有改动归属，明确比较模式及已提交/未提交/新增文件的范围；中途 commit 不重置基准。明确的单次窄范围评审只批准该范围，不冒充整项功能通过。
+- 保存 reviewer 返回的逻辑句柄，复审在 subagent 调用中传入 `session`（批量用 `tasks[].session`），并核对返回元数据。`persistent: true` 只保留会话，不自动恢复。仍需补交最新修改、测试、用户决定和原始范围；失去句柄时说明并提供完整交接。
+- 集中首审、集中修复、连续复审，目标减少机械来回但不硬限两轮。仅 CHANGES_REQUESTED 启动修复；APPROVED 不调用多余修复，BLOCKED 或工具失败先报告。额外发现说明首审遗漏、修复引入或范围变化；已知缺基准/范围时不启动注定阻塞的调用，也不制造提交。
+- 普通风格建议不自动阻断；代码批准不等于真实服务或视觉交互验收。缺 reviewer、验收环境或权限时准确报告未评审/blocked，不能用自检替代独立结论。
+
+角色默认仍不绑定模型，型号由私有 local 配置管理；主会话实现使用当前主会话模型，不为了执行实现额外启动指定型号的子进程。更新后 `/reload` 或启动新会话；过去已展开的提示词和调用不会被改写。这些是提示词层面的约定，不是扩展强制执行的调度状态机；行为、耗时和审查质量仍需实际任务验证。
+
 ## 可选能力与依赖
 
 [依赖清单](../manifests/dependencies.json) 记录 npm 固定版本、独立仓库修订及需手动配置的来源。安装基础环境不代表这些可选能力已安装、登录或完成端到端验证。
@@ -84,27 +96,32 @@ node scripts/workbench.mjs doctor --local "$HOME/.config/pi-workbench/local.json
 
 `--with-tools` 不自动替换已配置的不同版本。已有工具时，先用 `pi list` 检查，再通过 `pi remove <当前来源>` 和 `pi install <清单来源>` 做受控替换，避免同名包的多个版本并存。
 
-### 私有工作流扩展
+### 外部扩展与 Subagent
 
-[my-pi-extension](https://github.com/ZHOUKAILIAN/my-pi-extension) 提供 `/fix` 原型，以及独立的额度状态栏和 `/fast` 接线。`/feature` 尚未实现；私有工作流的真实 provider E2E 不属于本仓库验证范围。
+[my-pi-extension](https://github.com/ZHOUKAILIAN/my-pi-extension) 是公开的扩展源码源头，`packages/subagent` 提供唯一的 `@pi/subagent` 实现。工作台不再保存、安装或维护另一个 dispatcher；只维护角色、提示词、来源声明和安装检查。
 
-使用具备权限的 GitHub 身份，在本仓库外克隆指定版本；不要把访问 token 写进 URL：
+在本仓库外显式克隆指定版本，不把 token 写进 URL，也不覆盖已有工作树：
 
 ```bash
 mkdir -p "$HOME/dev"
-git clone git@github.com:ZHOUKAILIAN/my-pi-extension.git "$HOME/dev/my-pi-extension"
-git -C "$HOME/dev/my-pi-extension" checkout --detach e88085b312a7293b609cab81a480015e4297efd0
+git clone https://github.com/ZHOUKAILIAN/my-pi-extension.git "$HOME/dev/my-pi-extension"
+git -C "$HOME/dev/my-pi-extension" checkout --detach f6f847ca350d5819c128a8e874c40c8407b0bfa7
 (cd "$HOME/dev/my-pi-extension" && npm ci --ignore-scripts)
 ```
 
-将以下目录的实际绝对路径加入 local.json 的 `packages` 数组：
+该 ref 是公开 Pi 1.1 兼容分支的固定快照，不是当前 main；本仓库检查的是 Pi 1.1.0 下 subagent 的注册和 session 参数，不承诺其他 package、未来 patch、真实子会话恢复或 provider E2E。已在其他目录安装该包时可复用原目录，先核对版本/兼容性，不再添加第二份来源。
+
+把 `packages/subagent` 的实际绝对路径加入私有 local.json 的 `packages` 数组。不是根 monorepo 路径，也不是源码软链接；JSON 不会展开 `$HOME`，请填本机实际路径：
 
 ```text
-$HOME/dev/my-pi-extension/packages/fix
-$HOME/dev/my-pi-extension/packages/codex-usage-status
+$HOME/dev/my-pi-extension/packages/subagent
 ```
 
-Pi manifest 位于子 package，不能用根仓库路径代替。无私有仓库权限时，基础角色、提示词与 subagent 仍可独立使用。克隆、依赖安装和服务验证由用户显式执行，不由工作台安装脚本隐式触发。
+然后用同一 local 配置 plan/apply/doctor，启动 Pi 后检查 subagent 工具；更改源码或配置后 `/reload` 或开启新会话。工作台不会 clone、npm install 或调用模型，也不会把包源码复制进 agent 目录。未接入该包时基础配置仍可安装，但会警告缺少 subagent，doctor 返回未就绪，不能声称独立评审可用。
+
+当前 doctor 只识别 settings/local.packages 中绝对路径所指 manifest 的 `@pi/subagent` 身份与入口文件。使用不带资源过滤的目录字符串或 `{ "source": "绝对目录" }` 声明；`extensions: []` 视为禁用，但仍参与声明冲突检查，不能用后追加的字符串假定覆盖首条禁用声明。`autoload:false` 或其他资源过滤声明暂不支持，会拒绝 apply；显式 `autoload:true` 可以使用。重复身份（含禁用声明）或无效/缺失/符号链接入口同样阻止 apply。不同声明不会被静默合并或删除；先明确保留哪个来源。远端 package、任意其他路径中的同名工具注册仍需 Pi 的实际加载检查，不在 doctor 的静态保证内。
+
+可选 `/fix`、额度状态栏和 `/fast` 同样在这个仓库中维护，路径为 `packages/fix`、`packages/codex-usage-status`；它们的 Pi 1.1.0 兼容性与真实 provider E2E 未在本工作台验证，不默认启用。`/feature` 尚未实现。克隆、依赖安装和服务验证始终是显式操作。
 
 ### Skills
 
@@ -151,10 +168,19 @@ node scripts/workbench.mjs restore --backup BACKUP_ID
 
 安装器面向单次串行操作，失败时尽力回退；不提供并发写入或进程崩溃的事务保证。回滚 hash 检查用于保护后续修改，不是备份签名。
 
+### 旧内置 Subagent 的迁移
+
+plan/doctor 检查目标目录中的 `extensions/subagent`、`extensions/subagent.ts`、`extensions/subagent.js`，报告已知旧来源；apply 即使 --replace 也整体拒绝写入，避免新增重复注册，不擅自删除或替换这些文件。其他 settings.extensions、项目扩展或 CLI 加载源需自行用 Pi 配置检查；检测清单不代表能发现任意同名工具。
+
+退出相关 Pi 进程后，先对照旧版本和备份检查文件/hash及自定义内容，明确只保留外部包。由用户显式把确认属于旧工作台且不再需要的副本移到 agent 自动发现目录之外并保存，再移除其明确加载声明；不要批量清空 extensions。再次 plan/apply/doctor，核对真实 Pi 只加载一个 subagent。删除仓库源码不会清除已部署文件，本 PR 不执行本机迁移。
+
+旧 v1 安装备份的扩展路径和目录记录仍支持显式 restore，保留内容/hash、权限、路径与后续编辑保护。恢复旧扩展可能重新产生双来源，需要重新检查外部 package 声明，不能把 restore 当作自动去重。
+
 ## 检查范围
 
-- `npm test` 验证仓库结构、JSON、链接、角色工具名、路径、明显 secrets 模式，以及安装/回滚行为；不能代替人工隐私检查。
-- `npm run smoke` 使用真实 Pi 检查隔离环境的资源发现与注册，不联网、不登录、不调用模型。
-- `doctor` 检查托管文件与声明的本机路径/配置，不验证第三方包下载、远端权限或服务可用性。
+- `npm test` 验证结构、JSON、链接、角色工具名、路径、明显 secrets 模式，以及外部包检查、旧来源拒绝、安装与新旧备份回滚行为；不能代替人工隐私检查。
+- `npm run smoke` 使用隔离 HOME/agent 目录和真实 Pi，检查基础提示词/全局规则/测试资源发现及五个角色文件部署，禁止模型调用；不验证外部 subagent。
+- `npm run smoke -- --subagent-package <绝对package目录>` 额外加载指定外部包，确认唯一 subagent 注册和 session/persistent/并行任务 session 参数。只有已显式提供、准备好依赖的包才加载，不下载源码；不执行子任务，不声称恢复或 provider E2E 通过。
+- `doctor` 检查托管文件、声明的本机包 manifest/入口及已知旧来源，不验证动态工具行为、任意其他来源的重复注册、第三方下载、远端权限或服务可用性。
 
 真实模型调用、私有工作流 E2E、长任务取消和外部服务授权，需要在对应能力的环境中单独验证。

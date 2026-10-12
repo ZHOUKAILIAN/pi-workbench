@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pi": { "package": "@earendil-works/pi-coding-agent", "testedVersion": "0.84.4", "node": ">=22" },
+  "pi": { "package": "@earendil-works/pi-coding-agent", "testedVersion": "1.1.0", "node": ">=22" },
   "npmPackages": [
     { "source": "npm:@tavily/pi-extension@0.1.2", "purpose": "Web search and extraction; requires a private TAVILY_API_KEY" },
     { "source": "npm:pi-mcp-adapter@2.26.1", "purpose": "MCP integration; configure servers and authenticate on each machine" }
@@ -9,11 +9,11 @@
     {
       "name": "my-pi-extension",
       "url": "https://github.com/ZHOUKAILIAN/my-pi-extension.git",
-      "visibility": "private",
-      "ref": "e88085b312a7293b609cab81a480015e4297efd0",
-      "packages": ["packages/fix", "packages/codex-usage-status"],
+      "visibility": "public",
+      "ref": "f6f847ca350d5819c128a8e874c40c8407b0bfa7",
+      "packages": ["packages/subagent", "packages/fix", "packages/codex-usage-status"],
       "setup": "npm ci --ignore-scripts",
-      "status": "optional-source-recovery; provider E2E not verified here"
+      "status": "subagent package discovery/schema checked on Pi 1.1.0; ref is a compatibility-branch snapshot, not main; optional fix/usage compatibility and provider E2E not verified here"
     },
     {
       "name": "skills",

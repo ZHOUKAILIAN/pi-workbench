@@ -1,10 +1,12 @@
 # Third-party notices
 
-`extensions/subagent/index.ts` and `extensions/subagent/agents.ts` are adopted from the user's local Pi subagent customization, based on the Pi subagent example. This workbench preserves that local implementation rather than claiming it is identical to the current upstream version. It includes local fallback-model handling and parallel result presentation.
+Pi Workbench no longer ships or installs a subagent implementation. The external `@pi/subagent` package is maintained in [my-pi-extension](https://github.com/ZHOUKAILIAN/my-pi-extension); its source and license stay in that repository.
+
+Earlier workbench revisions included `extensions/subagent/index.ts` and `extensions/subagent/agents.ts`, adopted from the user's local Pi customization based on the Pi MIT example. The following attribution is retained for that historical source; it does not describe a second current implementation.
 
 Upstream: https://github.com/earendil-works/pi-mono/tree/main/packages/coding-agent/examples/extensions/subagent
 
-The following upstream MIT notice applies to those files:
+The following upstream MIT notice applies to those historical files:
 
 ```text
 MIT License
@@ -30,4 +32,4 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-Third-party npm packages, external skills and the private extension repository are referenced only; their code and licenses remain with their owning sources.
+Third-party npm packages, external skills and external extension repositories are referenced only; their code and licenses remain with their owning sources.

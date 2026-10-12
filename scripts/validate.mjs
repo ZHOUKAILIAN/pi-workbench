@@ -24,7 +24,7 @@ function walk(dir = "") {
   }
 }
 walk();
-for (const legacy of [".codex", "local-codex", ".agents/skills/feature-delivery"]) {
+for (const legacy of [".codex", "local-codex", ".agents/skills/feature-delivery", "extensions/subagent"]) {
   check(!fs.existsSync(path.join(root, legacy)), `retired entry still exists: ${legacy}`);
 }
 for (const [dir, expected] of [["agents", roles], ["prompts", prompts]]) {
@@ -83,7 +83,10 @@ try {
   assert.deepEqual(Object.keys(defaults).sort(), ["defaultThinkingLevel", "theme", "transport"]);
   assert.deepEqual(JSON.parse(read("config/local.example.json")), { settings: {}, agentModels: {}, skills: [], packages: [] });
   assert.equal(JSON.parse(read("package.json")).name, "pi-workbench");
-  for (const file of ["extensions/subagent/index.ts", "extensions/subagent/agents.ts", "scripts/workbench.mjs", "scripts/smoke.mjs", "THIRD_PARTY_NOTICES.md"]) assert.ok(files.includes(file), `missing ${file}`);
+  const external = manifest.repositories.find((item) => item.name === "my-pi-extension");
+  assert.equal(external?.visibility, "public");
+  assert.ok(external?.packages.includes("packages/subagent"), "external subagent source missing");
+  for (const file of ["scripts/workbench.mjs", "scripts/smoke.mjs", "THIRD_PARTY_NOTICES.md"]) assert.ok(files.includes(file), `missing ${file}`);
 } catch (error) { failures.push(`contract: ${error.message}`); }
 if (failures.length) {
   console.error(failures.map((f) => `- ${f}`).join("\n"));

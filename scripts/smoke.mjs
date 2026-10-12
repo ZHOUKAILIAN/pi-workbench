@@ -5,7 +5,16 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { apply, doctor } from "./workbench.mjs";
 
-// Real CLI discovery, not a model/provider test. Every generated artifact is private and temporary.
+// Real CLI discovery, not a model/provider test. External code is referenced, never copied.
+const args = process.argv.slice(2);
+let subagentPackage;
+if (args.length) {
+  if (args.length !== 2 || args[0] !== "--subagent-package" || !path.isAbsolute(args[1])) {
+    console.error("Usage: smoke.mjs [--subagent-package ABSOLUTE_PACKAGE_DIRECTORY]");
+    process.exit(1);
+  }
+  subagentPackage = args[1];
+}
 const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pi-workbench-smoke-"));
 const home = path.join(root, "home");
 const target = path.join(home, ".pi", "agent");
@@ -20,21 +29,27 @@ try {
   put(path.join(pkg, "package.json"), JSON.stringify({ name: "workbench-smoke-fixture", pi: { extensions: ["index.ts"] } }));
   put(path.join(pkg, "index.ts"), 'export default function(pi) { pi.registerCommand("fixture-ready", { description: "Smoke fixture", handler: async () => {} }); }\n');
   const local = path.join(root, "local.json");
-  put(local, JSON.stringify({ skills: [skill], packages: [pkg] }));
+  put(local, JSON.stringify({ skills: [skill], packages: [pkg, ...(subagentPackage ? [subagentPackage] : [])] }));
   apply({ target, localPath: local });
-  assert.equal(doctor({ target, localPath: local }).ok, true);
+  const health = doctor({ target, localPath: local });
+  if (subagentPackage) assert.equal(health.ok, true, health.issues.join("; "));
+  else assert.deepEqual(health.issues, ["subagent package not configured: add the external @pi/subagent directory to local.packages"]);
+  assert.equal(fs.existsSync(path.join(target, "extensions", "subagent")), false, "Workbench must not deploy a subagent copy");
   const probe = path.join(root, "probe.ts");
-  put(probe, `import { discoverAgents } from ${JSON.stringify(path.join(target, "extensions/subagent/agents.ts"))};
+  put(probe, `import fs from "node:fs";
 export default function(pi) {
   pi.on("before_provider_request", () => { throw new Error("Provider requests prohibited during smoke"); });
   pi.registerCommand("workbench-probe", {
     description: "Read-only discovery probe",
     handler: async (_args, ctx) => {
       const commands = pi.getCommands().map(c => c.name);
-      const tools = pi.getAllTools().map(t => t.name);
-      const agents = discoverAgents(ctx.cwd, "user").agents.map(a => a.name).sort();
+      const tools = pi.getAllTools();
+      const subagents = tools.filter(t => t.name === "subagent");
+      const schema = subagents[0]?.parameters?.properties;
+      const parallel = schema?.tasks?.items?.properties;
+      const roles = fs.readdirSync(${JSON.stringify(path.join(target, "agents"))}).filter(n => n.endsWith(".md")).map(n => n.slice(0, -3)).sort();
       const globalRules = ctx.getSystemPromptOptions().contextFiles?.some(f => f.path === ${JSON.stringify(path.join(target, "AGENTS.md"))}) ?? false;
-      ctx.ui.notify(JSON.stringify({ type: "workbench_probe", commands, tools, agents, globalRules }), "info");
+      ctx.ui.notify(JSON.stringify({ type: "workbench_probe", commands, roles, globalRules, subagentCount: subagents.length, session: schema?.session?.type === "string", persistent: schema?.persistent?.type === "boolean", parallelSession: parallel?.session?.type === "string" }), "info");
     }
   });
 }
@@ -77,9 +92,14 @@ export default function(pi) {
           }
           if (event.id === "probe") {
             assert.ok(data, `Probe data missing. ${stderr}`);
-            assert.ok(data.tools.includes("subagent"), "Subagent tool not registered");
-            assert.deepEqual(data.agents, ["code_reviewer", "evidence_investigator", "implementer", "product_aligner", "verifier"]);
+            assert.deepEqual(data.roles, ["code_reviewer", "evidence_investigator", "implementer", "product_aligner", "verifier"]);
             assert.equal(data.globalRules, true, "Global AGENTS not loaded");
+            assert.equal(data.subagentCount, subagentPackage ? 1 : 0, "Unexpected subagent registration count");
+            if (subagentPackage) {
+              assert.equal(data.session, true, "External subagent lacks session handle parameter");
+              assert.equal(data.persistent, true, "External subagent lacks persistence parameter");
+              assert.equal(data.parallelSession, true, "External subagent lacks per-task session parameter");
+            }
             finish(null, data);
           }
         } catch (error) { finish(error); }
@@ -91,7 +111,8 @@ export default function(pi) {
   const killTimer = setTimeout(() => child.kill("SIGKILL"), 3000);
   await closed;
   clearTimeout(killTimer);
-  console.log(`Pi smoke passed: ${result.agents.length} roles, 3 prompts, global AGENTS, subagent, fixture skill and fixture package. No provider requests.`);
+  console.log(`Pi smoke passed: ${result.roles.length} installed role files, 3 prompts, global AGENTS, fixture skill and fixture package. No provider requests.`);
+  console.log(subagentPackage ? "External subagent: one registered tool; session/persistent/per-task session schema checked. Child execution/resume E2E NOT tested." : "External subagent NOT checked; pass --subagent-package to verify registration and schema. Base resources alone do not provide independent review.");
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
