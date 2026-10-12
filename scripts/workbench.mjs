@@ -148,8 +148,6 @@ function sourceFiles(repoRoot, local) {
       add(source, `${group}/${entry.name}`, transform || ((x) => x));
     }
   }
-  add("extensions/subagent/index.ts", "extensions/subagent/index.ts");
-  add("extensions/subagent/agents.ts", "extensions/subagent/agents.ts");
   return files;
 }
 function renderAgent(text, model) {
@@ -203,6 +201,43 @@ function destinationInfo(target, item) {
   const before = { hash: sha(content), mode: st.mode & 0o777, content };
   return { destination, before, action: before.hash === sha(item.content) ? "unchanged" : "conflict" };
 }
+// Package identity comes from the declared local package, not a copied dispatcher or directory name.
+function subagentStatus(packages, target) {
+  const legacy = ["extensions/subagent", "extensions/subagent.ts", "extensions/subagent.js"].filter((relative) => has(path.join(target, relative)));
+  const selected = [];
+  const declarations = [];
+  let invalid = false;
+  for (const item of packages) {
+    const source = typeof item === "string" ? item : isPlainObject(item) ? item.source : undefined;
+    if (typeof source !== "string" || !path.isAbsolute(source)) continue;
+    let manifest;
+    try { manifest = readJson(path.join(source, "package.json"), "external package manifest"); } catch { continue; }
+    if (!isPlainObject(manifest) || manifest.name !== "@pi/subagent") continue;
+    // Pi keeps the first same-scope package identity. A disabled declaration must not
+    // disappear from conflict checks merely because a later declaration enables it.
+    declarations.push(source);
+    if (isPlainObject(item) && Array.isArray(item.extensions) && item.extensions.length === 0) continue;
+    selected.push(source);
+    try {
+      rejectTraversal(source, "external subagent package");
+      directory(source, "external subagent package");
+      // Filtered packages need runtime verification; doctor accepts only unfiltered declarations.
+      if (isPlainObject(item) && (item.extensions !== undefined || (item.autoload !== undefined && item.autoload !== true))) fail("filtered or non-autoload subagent declaration");
+      const entries = manifest.pi?.extensions;
+      if (!Array.isArray(entries) || entries.length === 0) fail("invalid extensions");
+      for (const entry of entries) {
+        if (typeof entry !== "string" || !entry || path.isAbsolute(entry) || entry.includes("\\") || /[*?!]/.test(entry)) fail("invalid extension entry");
+        rejectTraversal(entry, "external subagent entry");
+        regularFile(path.join(source, entry), "external subagent entry");
+      }
+    } catch { invalid = true; }
+  }
+  const issues = legacy.map((relative) => `legacy subagent source: ${relative}; inspect and migrate explicitly (not removed automatically)`);
+  if (!selected.length) issues.push("subagent package not configured: add the external @pi/subagent directory to local.packages");
+  if (declarations.length > 1) issues.push("multiple external @pi/subagent declarations (including disabled entries); select one package declaration");
+  if (invalid) issues.push("external @pi/subagent declaration or extension entries are invalid/unsupported");
+  return { legacy, selected, declarations, invalid, issues };
+}
 export function buildPlan(options = {}) {
   const context = getOptions(options);
   const defaults = readJson(path.join(context.repoRoot, "config/settings.json"), "source settings");
@@ -235,7 +270,8 @@ export function buildPlan(options = {}) {
   });
   const changes = details.filter((x) => x.action !== "unchanged");
   const conflicts = details.filter((x) => x.action === "conflict");
-  return { ...context, files: details, changes, conflicts };
+  const subagent = subagentStatus(settings.packages, context.target);
+  return { ...context, files: details, changes, conflicts, subagent };
 }
 function ensureDir(p, mode) {
   noSymlink(p, "write path");
@@ -258,7 +294,9 @@ function atomicWrite(p, data, mode) {
   } catch { try { if (has(tmp)) fs.unlinkSync(tmp); } catch {} fail("write failed"); }
 }
 function backupId() { return `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`; }
-const RESOURCE_DIRECTORIES = ["agents", "prompts", "extensions", "extensions/subagent"];
+const RESOURCE_DIRECTORIES = ["agents", "prompts"];
+// Accept old receipts for explicit restore only; new installs never write these extension paths.
+const RESTORABLE_DIRECTORIES = [...RESOURCE_DIRECTORIES, "extensions", "extensions/subagent"];
 function makeBackup(plan) {
   const createdDirectories = RESOURCE_DIRECTORIES.filter((dir) =>
     !has(path.join(plan.target, dir)) && plan.changes.some((item) => item.relative.startsWith(`${dir}/`)));
@@ -303,6 +341,8 @@ function rollback(plan, applied, createdDirs) {
 }
 export function apply(options = {}) {
   const plan = buildPlan(options);
+  if (plan.subagent.legacy.length) fail("legacy subagent source detected; inspect and migrate explicitly before apply (even with --replace)");
+  if (plan.subagent.declarations.length > 1 || plan.subagent.invalid) fail("external subagent configuration is invalid; inspect plan/doctor before apply");
   if (plan.conflicts.length && !plan.replace) fail("conflicting managed files; rerun with --replace");
   if (plan.conflicts.some((item) => item.before?.type === "other")) fail("managed destination is not a file");
   if (!plan.changes.length) return { changed: false, backupId: null, plan };
@@ -329,7 +369,7 @@ export function apply(options = {}) {
 }
 export function doctor(options = {}) {
   const plan = buildPlan(options);
-  const issues = plan.changes.map((item) => `${item.action === "create" ? "missing" : "inconsistent"}: ${item.relative}`);
+  const issues = [...plan.changes.map((item) => `${item.action === "create" ? "missing" : "inconsistent"}: ${item.relative}`), ...plan.subagent.issues];
   return { ok: issues.length === 0, issues, plan };
 }
 function readBackup(plan, id) {
@@ -340,7 +380,7 @@ function readBackup(plan, id) {
   const manifest = readJson(path.join(dir, "manifest.json"), "backup manifest");
   if (!isPlainObject(manifest) || manifest.version !== 1 || !Array.isArray(manifest.files)) fail("backup manifest is invalid");
   const createdDirectories = manifest.createdDirectories ?? [];
-  if (!Array.isArray(createdDirectories) || createdDirectories.some((dir) => !RESOURCE_DIRECTORIES.includes(dir)) || new Set(createdDirectories).size !== createdDirectories.length) fail("backup directories are invalid");
+  if (!Array.isArray(createdDirectories) || createdDirectories.some((dir) => !RESTORABLE_DIRECTORIES.includes(dir)) || new Set(createdDirectories).size !== createdDirectories.length) fail("backup directories are invalid");
   for (const dir of createdDirectories) noSymlink(path.join(plan.target, dir), "restore directory");
   const seenPaths = new Set();
   const entries = manifest.files.map((entry, i) => {
@@ -421,12 +461,14 @@ export function main(argv = process.argv.slice(2)) {
     }
     if (command === "apply") {
       const result = apply(options); console.log(result.changed ? `Applied ${result.plan.changes.length} files; backup ${result.backupId}` : "No changes");
+      for (const issue of result.plan.subagent.issues) console.error(`Warning: ${issue}`);
     } else if (command === "doctor") {
       const result = doctor(options); if (!result.ok) { for (const issue of result.issues) console.error(issue); process.exitCode = 1; } else console.log("Doctor: OK");
     } else if (command === "restore") {
       const result = restore(options); console.log(`Restored ${result.files} files from backup ${result.backupId}`);
     } else {
       const result = buildPlan(options); console.log(`Plan: ${result.changes.length} change(s), ${result.conflicts.length} conflict(s)`); for (const item of result.changes) console.log(`${item.action}: ${item.relative}`);
+      for (const issue of result.subagent.issues) console.error(`Warning: ${issue}`);
     }
   } catch (error) {
     console.error(error instanceof WorkbenchError ? error.message : "Operation failed");
